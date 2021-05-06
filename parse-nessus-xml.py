@@ -87,7 +87,7 @@ for report_host in nfr.scan.report_hosts(root):
 
         vuln_report[plugin_id] = this_vuln
 
-print("Known deamons seen: ", daemon_count)
+print("Known daemons seen: ", daemon_count)
 print("\n------- SUMMARY ------\n")
 
 for key in sorted(vuln_report):
