@@ -6,6 +6,7 @@ import glob
 import traceback
 import time
 import sys
+import re
 
 import csv
 csvwriter = csv.writer(sys.stdout,quoting=csv.QUOTE_ALL)
@@ -28,10 +29,26 @@ print(f'File name: {file_name}')
 print(f'File size: {file_size}')
 print(f'Scan start date: {start_date}')
 
+DAEMONS = "bosh.dns|bosh.dns.adapter|bosh.dns.health|alertmanager|binding.cache|blackbox.exporter|bosh.exporter|cf.exporter"
+DAEMONS += "|concourse|docker|doomsday|firehose.exporter|gdn|gnatsd|grafana.server|java|kube.state.metrics|nessusd|nginx"
+DAEMONS += "|node.exporter|ntpd|oauth2.proxy|prometheus|pushgateway|ruby"
+DAEMONS += "|auctioneer|bbs|binding.cache|broker|cc.uploader|consul|discovery.registrar|dockerdt"
+DAEMONS += "|doppler|elasticsearch.exporter|etcd|file.server|flanneld|forwarder.agent|gorouter"
+DAEMONS += "|kube.apiserver|kube.controller.manager|kube.proxy|kube.scheduler|kubelet|locket"
+DAEMONS += "|log.cache|log.cache.cf.auth.proxy|log.cache.gateway|log.cache.nozzle|loggregator.agent|metrics.agent"
+DAEMONS += "|netmon|node|policy.server|policy.server.internal|prom.scraper|redis.server|rep"
+DAEMONS += "|reverse.log.proxy|rlp|reverse.log.proxy.gateway|rlp.gateway"
+DAEMONS += "|route.emitter|service.discovery.controller|silk.controller|silk.daemon"
+DAEMONS += "|ssh.proxy|statsd.injector|syslog.agent|tps.watcher|trafficcontroller|udp.forwarder|vxlan.policy.agent"
+daemon_count = 0
+
 vuln_report = {}
 for report_host in nfr.scan.report_hosts(root):
     report_host_name = nfr.host.report_host_name(report_host)
+#    print("===",report_host_name, nfr.host.number_of_compliance_plugins_per_result(report_host,"FAILED"),"===")
     for report_item in nfr.host.report_items(report_host):
+#        if nfr.plugin.compliance_check_item_value(report_item, 'cm:compliance-result') != "PASSED":
+#            print(nfr.plugin.compliance_check_item_value(report_item, 'cm:compliance-check-name'))
         plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
         risk_factor = nfr.plugin.report_item_value(report_item, 'risk_factor')
         plugin_name = nfr.plugin.report_item_value(report_item, 'pluginName')
@@ -49,13 +66,34 @@ for report_host in nfr.scan.report_hosts(root):
             "plugin_output": plugin_output,
             "hosts": hosts
         }
+
+        # Match on known daemons:
+        if plugin_id == 33851:
+            for line in plugin_output.splitlines():
+                if (len(line) < 1):
+                    continue
+                if "The following running daemons are not managed by dpkg" in line:
+                    continue
+                if (line == "/bin/kube2iam"):
+                    daemon_count += 1
+                    continue
+                if re.search(rf'/var/vcap/bosh/bin/(bosh-agent|monit)', line):
+                    daemon_count += 1
+                    continue
+                if re.search(rf'^/var/vcap/data/packages/({DAEMONS})/[0-9a-f]+/bin/{DAEMONS}$', line):
+                    daemon_count += 1
+                    continue
+                print("== Unknown daemon found: ",report_host_name,": ", line)
+
         vuln_report[plugin_id] = this_vuln
 
+print("Known daemons seen: ", daemon_count)
 print("\n------- SUMMARY ------\n")
 
 for key in sorted(vuln_report):
     if vuln_report[key]["risk_factor"] != "None":
         affected_hosts = vuln_report[key]["hosts"]
+        affected_hosts.sort()
         print(vuln_report[key]["full_description"])
 #        print(vuln_report[key]["plugin_output"])
         if len(affected_hosts) > 6:
@@ -66,7 +104,7 @@ for key in sorted(vuln_report):
 
 print("\n-------  CSV  ------\n")
 remediation_plan="We use operating system 'stemcells' from the upstream BOSH open source project, and these libraries are part of those packages. They release updates frequently, usually every couple weeks or so, and we will deploy this update when they make it ready."
-owner="Eddie Tejeda"
+owner="Ron Williams"
 for vuln in sorted(vuln_report):
     if vuln_report[vuln]["risk_factor"] != "None":
         number_of_affected_hosts = len(vuln_report[vuln]["hosts"])
