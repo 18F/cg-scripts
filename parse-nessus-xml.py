@@ -99,7 +99,6 @@ for key in sorted(vuln_report):
         if len(affected_hosts) > 6:
             print('\t{} affected hosts found ...'.format(len(affected_hosts)))
         else:
-            #for site in affected_hosts.sort():
             for site in affected_hosts:
                 print('\t{}'.format(site))
 
